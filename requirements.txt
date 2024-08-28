@@ -1,2 +1,4 @@
 DrissionPage
 python-dateutil
+pyautogui
+screeninfo

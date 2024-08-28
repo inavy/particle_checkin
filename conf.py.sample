@@ -36,3 +36,33 @@ DEF_IP_FULL = 'The number of times this ip sent today is full, please try again 
 DEF_MSG_SUCCESS = 'SUCCESS'
 DEF_MSG_FAIL = 'FAIL'
 DEF_MSG_IP_FULL = 'IP IS FULL'
+
+############################################################
+# PROXY: ClashX -> Proxy
+DEF_AUTO_PROXY = True
+
+# 记录每天的 PROXY 使用情况
+DEF_PATH_DATA_PROXY = 'datas/proxy'
+
+# 主显示器的宽度和高度
+DEF_SCREEN_WIDTH = 1512
+DEF_SCREEN_HEIGHT = 982
+
+# Proxy 每个选项的高度
+DEF_HEIGHT_ITEM = 22
+
+# ClashX 图标的位置
+DEF_ICON_XY = [1122, 22]
+# proxy 菜单位置
+DEF_PROXY_XY = [1122, 90]
+# Proxy 列表中第一个选项的 [X, Y]
+DEF_START_XY = [800, 288]
+
+# Proxy 列表
+DEF_PROXY_LIST = [
+    'Australia-AU-1',
+    'Australia-AU-2',
+    'Australia-AU-3',
+    'Australia-AU-4'
+]
+############################################################

@@ -1,3 +1,4 @@
+import os
 import sys # noqa
 import argparse
 import logging
@@ -11,6 +12,8 @@ from DrissionPage import ChromiumPage
 from DrissionPage._elements.none_element import NoneElement
 
 from fun_utils import ding_msg
+from fun_utils import get_date
+from proxy_utils import change_proxy
 
 from conf import DEF_LOCAL_PORT
 from conf import DEF_USE_HEADLESS
@@ -29,9 +32,15 @@ from conf import FILENAME_LOG
 from conf import DEF_BALANCE_USDG_MIN
 from conf import DEF_MSG_BALANCE_ERR
 from conf import DEF_PATH_BROWSER
+from conf import DEF_AUTO_PROXY
+from conf import DEF_PATH_DATA_PROXY
 
 
 """
+2024.08.28
+1. 通过 pyautogui 切换 proxy
+注意，锁屏下无法操作
+
 2024.08.27
 1. INSUFFICIENT BALANCE
 当余额不足时，发消息提醒，手动 Deposit
@@ -59,10 +68,28 @@ logger = logging.getLogger(__name__)
 
 
 class ParticleTask():
-    def __init__(self, args) -> None:
-        self.args = args
+    def __init__(self) -> None:
+        self.args = None
         self.page = None
         self.usdg = -1
+        self.s_today = get_date(is_utc=True)
+        self.file_proxy = f'{DEF_PATH_DATA_PROXY}/proxy_{self.s_today}.csv'
+        self.proxy_name = ''
+        self.proxy_info = 'USING'
+        self.lst_proxy_cache = []
+        self.lst_proxy_black = []
+
+        if DEF_AUTO_PROXY:
+            self.lst_proxy_black = self.proxy_load()
+            self.proxy_name = change_proxy(self.lst_proxy_black)
+            logger.info(f'已开启自动更换 Proxy ，当前代理是 {self.proxy_name}')
+
+    def set_args(self, args):
+        self.args = args
+
+    def __del__(self):
+        self.proxy_save()
+        logger.info(f'Exit {self.args.s_profile}')
 
     def close(self):
         # 在有头浏览器模式 Debug 时，不退出浏览器，用于调试
@@ -70,6 +97,80 @@ class ParticleTask():
             pass
         else:
             self.page.quit()
+
+    def proxy_update(self, proxy_update_info):
+        self.proxy_info = proxy_update_info
+        self.proxy_save()
+        self.lst_proxy_black = self.proxy_load()
+        logger.info(f'准备更换 Proxy ，更换前的代理是 {self.proxy_name}')
+        self.proxy_name = change_proxy(self.lst_proxy_black)
+        logger.info(f'完成更换 Proxy ，更换后的代理是 {self.proxy_name}')
+
+    def proxy_load(self):
+        lst_proxy_black = []
+
+        if not DEF_AUTO_PROXY:
+            return lst_proxy_black
+
+        try:
+            with open(self.file_proxy, 'r') as fp:
+                # Skip the header line
+                # next(fp)
+                for line in fp:
+                    if len(line.strip()) == 0:
+                        continue
+                    # 逗号分隔，Proxy Info 可能包含逗号
+                    fields = line.strip().split(',')
+                    proxy_name = fields[0]
+                    proxy_info = ', '.join(fields[1:])
+                    self.lst_proxy_cache.append([proxy_name, proxy_info])
+                    if proxy_info in [DEF_MSG_IP_FULL, DEF_MSG_FAIL]:
+                        lst_proxy_black.append(proxy_name)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.info(f'[proxy_load] An error occurred: {str(e)}')
+
+        return lst_proxy_black
+
+    def proxy_save(self):
+        if not DEF_AUTO_PROXY:
+            return
+
+        if not self.proxy_name:
+            return
+
+        dir_file_out = os.path.dirname(self.file_proxy)
+        if dir_file_out and (not os.path.exists(dir_file_out)):
+            os.makedirs(dir_file_out)
+
+        if not os.path.exists(self.file_proxy):
+            with open(self.file_proxy, 'w') as fp:
+                fp.write('Proxy Name,Proxy Info\n')
+
+        b_new_proxy_name = True
+        try:
+            # 先读取原有内容以便更新
+            proxies = []
+            if os.path.exists(self.file_proxy):
+                with open(self.file_proxy, 'r') as fp:
+                    lines = fp.readlines()
+                    for line in lines[1:]:  # 跳过头部
+                        proxies.append(tuple(line.strip().split(',')))
+
+            with open(self.file_proxy, 'w') as fp:
+                fp.write('Proxy Name,Proxy Info\n')
+                for fields in proxies:
+                    proxy_name = fields[0]
+                    proxy_info = ','.join(fields[1:])
+                    if proxy_name == self.proxy_name:
+                        proxy_info = self.proxy_info
+                        b_new_proxy_name = False
+                    fp.write(f'{proxy_name},{proxy_info}\n')  # noqa
+                if b_new_proxy_name:
+                    fp.write(f'{self.proxy_name},{self.proxy_info}\n')  # noqa
+        except Exception as e:
+            logger.info(f'[proxy_save] An error occurred: {str(e)}')
 
     def initChrome(self, s_profile):
         """
@@ -166,11 +267,19 @@ class ParticleTask():
                     'text': (
                         '- 页面为空\n'
                         '- 请检查网络\n'
+                        '- profile: {s_profile}\n'
+                        '- proxy: {s_proxy}\n'
+                        .format(
+                            s_profile=self.args.s_profile,
+                            s_proxy=self.proxy_name
+                        )
                     )
                 }
                 ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
             self.page.quit()
-            sys.exit(-1)
+            if DEF_AUTO_PROXY:
+                self.proxy_update(DEF_MSG_FAIL)
+            # sys.exit(-1)
 
         try:
             # 检查网络连接是否正常
@@ -184,11 +293,19 @@ class ParticleTask():
                         'text': (
                             '- 无法访问此网站\n'
                             '- 连接已重置\n'
+                            '- profile: {s_profile}\n'
+                            '- proxy: {s_proxy}\n'
+                            .format(
+                                s_profile=self.args.s_profile,
+                                s_proxy=self.proxy_name
+                            )
                         )
                     }
                     ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
                 self.page.quit()
-                sys.exit(-1)
+                if DEF_AUTO_PROXY:
+                    self.proxy_update(DEF_MSG_FAIL)
+                # sys.exit(-1)
         except: # noqa
             pass
 
@@ -207,14 +324,25 @@ class ParticleTask():
                     'text': (
                         '- The number of times this ip sent today is full\n'
                         '- please try again tomorrow\n'
+                        '- profile: {s_profile}\n'
+                        '- proxy: {s_proxy}\n'
+                        .format(
+                            s_profile=self.args.s_profile,
+                            s_proxy=self.proxy_name
+                        )
                     )
                 }
                 ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
 
             logger.info('ERROR! IP is full')
             self.page.quit()
-            # time.sleep(60)
-            return True
+
+            if DEF_AUTO_PROXY:
+                self.proxy_update(DEF_MSG_IP_FULL)
+                time.sleep(3)
+                return False
+            else:
+                return True
         else:
             return False
 
@@ -232,6 +360,10 @@ class ParticleTask():
             x_path = '//*[@id="portal"]/div[2]/div[2]/div[1]/div/div[4]/div[4]/button/div[1]' # noqa
             self.page.wait.eles_loaded('x:{}'.format(x_path))
             self.page.actions.move_to('x:{}'.format(x_path))
+
+            # 等页面都加载完，网速慢的时候，按钮状态未更新
+            self.page.wait.load_start()
+
             # 首次不 sleep ，失败后从第二次开始，增加 sleep
             if i > 0:
                 logger.info('sleep {} seconds...'.format(i+1))
@@ -360,7 +492,11 @@ class ParticleTask():
             x_path = '//*[@id="portal"]/div[2]/div[2]/div[4]/div/div[4]/div/div' # noqa
             self.page.wait.eles_loaded('x:{}'.format(x_path))
             self.page.actions.move_to('x:{}'.format(x_path))
-            time.sleep(3)
+
+            # 等页面都加载完，网速慢的时候，按钮状态未更新
+            self.page.wait.load_start()
+            # time.sleep(3)
+
             button = self.page.ele('x:{}'.format(x_path), timeout=2)
             if isinstance(button, NoneElement):
                 pass
@@ -401,9 +537,13 @@ class ParticleTask():
                 d_cont = {
                     'title': 'insufficient balance',
                     'text': (
+                        '- profile: {}\n'
                         '- balance: ${} 小于 ${}\n'
                         '- please deposit manually\n'
-                        .format(flt_balance, DEF_BALANCE_USDG_MIN)
+                        .format(
+                            self.args.s_profile,
+                            flt_balance, DEF_BALANCE_USDG_MIN
+                        )
                     )
                 }
                 ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
@@ -444,9 +584,9 @@ class ParticleTask():
                 if len(s_balance) == 0:
                     logger.info('没有获取到 USDG 余额，重新开始')
                     continue
-                logger.info('USDG 余额: ${})'.format(s_balance))
+                logger.info(f'USDG 余额: ${s_balance} [{self.args.s_profile}]')
                 if not self.check_balance(s_balance):
-                    logger.info('USDG 余额不足，退出 (余额: ${})'.format(s_balance))
+                    logger.info(f'USDG 余额不足，退出 (余额: ${s_balance}) [{self.args.s_profile}]') # noqa
                     s_msg = DEF_MSG_BALANCE_ERR
                     break
                 buttons[0].click()
@@ -663,7 +803,7 @@ def main(args):
     else:
         # 生成 p001 到 p020 的列表
         items = [f'p{i:03d}' for i in range(1, args.num_purse+1)] # noqa
-        items = ['p012']
+        # items = ['p012']
         # items = ['p012', 'p015']
 
     profiles = copy.deepcopy(items)
@@ -675,6 +815,7 @@ def main(args):
     d_nft_purchased = {}
     d_nft_limit = {}
     d_usdg = {}
+    instParticleTask = ParticleTask()
 
     while items:
         n += 1
@@ -685,22 +826,26 @@ def main(args):
         items.remove(s_profile)
 
         args.s_profile = s_profile
-        instParticleTask = ParticleTask(args)
-        instParticleTask.initChrome(s_profile)
-        instParticleTask.open_okx()
-        instParticleTask.particle_init()
 
-        is_checked_in = instParticleTask.check_in()
-        (nft_purchased, nft_limit) = instParticleTask.particle_nft()
-        instParticleTask.close()
+        try:
+            instParticleTask.set_args(args)
+            instParticleTask.initChrome(s_profile)
+            instParticleTask.open_okx()
+            instParticleTask.particle_init()
 
-        if is_checked_in:
-            d_checkin[s_profile] = 'DONE'
-        else:
-            d_checkin[s_profile] = 'XXXXXXXXXX'
-        d_nft_purchased[s_profile] = nft_purchased
-        d_nft_limit[s_profile] = nft_limit
-        d_usdg[s_profile] = instParticleTask.usdg
+            is_checked_in = instParticleTask.check_in()
+            (nft_purchased, nft_limit) = instParticleTask.particle_nft()
+            instParticleTask.close()
+
+            if is_checked_in:
+                d_checkin[s_profile] = 'DONE'
+            else:
+                d_checkin[s_profile] = 'XXXXXXXXXX'
+            d_nft_purchased[s_profile] = nft_purchased
+            d_nft_limit[s_profile] = nft_limit
+            d_usdg[s_profile] = instParticleTask.usdg
+        except Exception as e:
+            logger.info(f'[{s_profile}] An error occurred: {str(e)}')
 
         logger.info('Finish')
 
