@@ -95,6 +95,9 @@ def change_proxy(black_list=[]):
         pg.click()
         ret_proxy_name = s_proxy
 
+        # 切换代理后，留一点时间，否则会出现 Network Error
+        time.sleep(3)
+
         break
     return ret_proxy_name
 

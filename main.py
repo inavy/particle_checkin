@@ -34,9 +34,16 @@ from conf import DEF_MSG_BALANCE_ERR
 from conf import DEF_PATH_BROWSER
 from conf import DEF_AUTO_PROXY
 from conf import DEF_PATH_DATA_PROXY
+from conf import DEF_CHECKIN
 
 
 """
+2024.08.29
+1. 在关键确认步骤确保页面加载完成
+self.page.wait.load_start()
+不追求速度，慢就是快
+2. Check-in 增加 Already checked-in Toastify 检查
+
 2024.08.28
 1. 通过 pyautogui 切换 proxy
 注意，锁屏下无法操作
@@ -240,7 +247,7 @@ class ParticleTask():
 
     def okx_confirm(self):
         logger.info('准备 OKX Wallet Confirm ...')
-        # page.wait.load_start()
+        # self.page.wait.load_start()
         # 当出现 cloudflare 时，勾选
         try:
             button = self.page.ele('x://*[@id="RlquG0"]/div/label/input')
@@ -376,11 +383,23 @@ class ParticleTask():
             if button.text == 'Checked in':
                 logger.info('Oh! Check-in is already done before!')
                 return True
-            logger.info('button.text={}'.format(button.text))
 
             if button.text == 'Check-in':
                 # 2024.08.27 无法点击，改为使用 js 点击，成功
                 button.click(by_js=True)
+            else:
+                logger.info('button.text={}'.format(button.text))
+
+            try:
+                toastify = self.page.ele('x://*[@id="1"]/div[1]/div[2]', timeout=2).text # noqa
+            except: # noqa
+                toastify = ''
+            if len(toastify) > 0:
+                if toastify == DEF_CHECKIN:
+                    logger.info('Check-in is success!')
+                    return True
+                else:
+                    logger.info('toastify={}'.format(toastify))
 
             # SEND TRANSACTION 窗口
             x_path = '/html/body/div[4]/div/div[2]/div/div/div[1]'
@@ -428,11 +447,12 @@ class ParticleTask():
 
             button = self.page.ele('x:{}'.format(x_path)) # noqa
             if isinstance(button, NoneElement):
-                return False
-            logger.info('CLICK TO ACTIVATE')
-            if DEF_DEBUG:
-                print(self.page.tab_ids)
-            button.click()
+                logger.info('NO ACTIVATE PAGE')
+            else:
+                logger.info('CLICK TO ACTIVATE')
+                if DEF_DEBUG:
+                    print(self.page.tab_ids)
+                button.click()
         except: # noqa
             logger.info('没有 CLICK TO ACTIVATE')
             # return False
@@ -483,7 +503,7 @@ class ParticleTask():
         num_ret = [0, 0]
 
         for i in range(DEF_NUM_TRY_PURCHASE_NFT):
-            logger.info('check_nft_num try_i={}'.format(i+1))
+            logger.info(f'check_nft_num try_i={i+1}/{DEF_NUM_TRY_PURCHASE_NFT}') # noqa
             self.page.get('https://pioneer.particle.network/zh-CN/point')
 
             # logger.info('即将刷新页面 {}'.format(page.url))
@@ -557,14 +577,15 @@ class ParticleTask():
         """
         s_msg = DEF_MSG_FAIL
         for i in range(DEF_NUM_TRY_PURCHASE_NFT):
-            logger.info('purchase_nft try_i={}'.format(i+1))
+            logger.info(f'purchase_nft try_i={i+1} [{self.args.s_profile}]')
             self.page.get('https://pioneer.particle.network/zh-CN/crossChainNFT') # noqa
 
-            logger.info('即将刷新页面 {}'.format(self.page.url))
-            self.page.refresh()
+            # logger.info('刷新页面 {}'.format(self.page.url))
+            # self.page.refresh()
 
             logger.info('准备在 crossChainNFT 页面点击 PURCHASE 按钮 ...')
-            time.sleep(5)
+            # time.sleep(5)
+            self.page.wait.load_start()
 
             x_path = '//*[@id="content-wrapper"]/div/div[2]/div[1]/div[3]/div[2]/div[4]/button/div[1]' # noqa
             button = self.page.ele('x:{}'.format(x_path), timeout=2)
@@ -575,7 +596,8 @@ class ParticleTask():
                 continue
 
             logger.info('准备选中 USDG 复选框 ...')
-            time.sleep(5)
+            # time.sleep(5)
+            self.page.wait.load_start()
 
             buttons = self.page.eles('.:polygon-small mb-3 flex cursor-pointer') # noqa
             if len(buttons) >= 1:
@@ -591,6 +613,7 @@ class ParticleTask():
                     break
                 buttons[0].click()
             else:
+                self.activate()
                 logger.info('没有 USDG 选项，重新开始')
                 continue
 
@@ -629,9 +652,11 @@ class ParticleTask():
                 s_msg = DEF_MSG_IP_FULL
                 break
 
+            logger.info('SUCCESSFUL 弹窗加载中 ...')
+            time.sleep(1)
+            self.page.wait.load_start()
             logger.info('正在确认 SUCCESSFUL 弹窗 ...')
             # 出现 SUCCESSFUL 弹窗，需要等待几秒
-            time.sleep(3)
             x_path = '/html/body/div[4]/div/div[2]/div/div/div[1]'
             self.page.wait.eles_loaded('x:{}'.format(x_path), timeout=2)
             button = self.page.ele('x:{}'.format(x_path), timeout=2)
@@ -639,18 +664,18 @@ class ParticleTask():
                 logger.info('没有 SUCCESSFUL 弹窗，重新开始')
                 continue
             else:
-                logger.info('button.text:{}'.format(button.text))
                 if button.text.startswith('SUCCESSFULLY'):
-                    logger.info('出现 SUCCESSFUL 弹窗')
+                    # logger.info('出现 SUCCESSFUL 弹窗')
                     # 弹窗右上角的 ×
                     x_path = '/html/body/div[4]/div/div[2]/div/button'
                     try:
                         self.page.ele('x:{}'.format(x_path)).click()
-                        logger.info('关闭 SUCCESSFUL 弹窗，成功')
+                        logger.info(f'关闭弹窗 {button.text}')
                     except: # noqa
                         logger.info('未能 SUCCESSFUL 弹窗，忽略')
                         pass
                 else:
+                    logger.info('button.text:{}'.format(button.text))
                     logger.info('Purchase Failed，重新开始 ...')
                     continue
 
@@ -782,9 +807,10 @@ class ParticleTask():
     def particle_nft(self):
         num_nft = [-1, -1]
         logger.info('准备 Purchase NFT ...')
-        for i in range(DEF_NUM_NFT):
+        max_try = int(DEF_NUM_NFT * 1.5)
+        for i in range(max_try):
             logger.info('#'*30)
-            logger.info('i={}'.format(i+1))
+            logger.info(f'### Purchasing, i={i+1}/{max_try} [{self.args.s_profile}]') # noqa
             num_nft = self.check_nft_num()
             if num_nft[1] > 0 and num_nft[0] >= DEF_NUM_NFT:
                 break
@@ -820,9 +846,8 @@ def main(args):
     while items:
         n += 1
         logger.info('#'*40)
-        logger.info('progress:{}/{}'.format(n, total))
         s_profile = random.choice(items)
-        logger.info(s_profile)
+        logger.info(f'progress:{n}/{total} [{s_profile}]') # noqa
         items.remove(s_profile)
 
         args.s_profile = s_profile

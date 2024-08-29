@@ -19,23 +19,25 @@ DEF_PATH_BROWSER = ''
 DEF_PATH_USER_DATA = '/opt/app/chain/auto_drissionpage/chrome_profile'
 DEF_PWD = 'default_password@'
 
-DEF_NUM_NFT = 10
-DEF_NUM_TRY_CHECKIN = 10
-DEF_NUM_TRY_PURCHASE_NFT = 15
+DEF_IP_FULL = 'The number of times this ip sent today is full, please try again tomorrow' # noqa
+DEF_CHECKIN = 'Already checked-in'
+
+DEF_MSG_SUCCESS = 'SUCCESS'
+DEF_MSG_FAIL = 'FAIL'
+DEF_MSG_IP_FULL = 'IP IS FULL'
 DEF_MSG_BALANCE_ERR = 'INSUFFICIENT BALANCE'
+
+DEF_NUM_NFT = 10
+DEF_NUM_TRY_CHECKIN = 5
+DEF_NUM_TRY_PURCHASE_NFT = 5
 
 # 余额不足时提醒
 DEF_BALANCE_USDG_MIN = 20
 
-# 遇到异常发钉钉消息，如果没有，置空，则不发钉钉消息
-DEF_DING_TOKEN = 'da53a62778bcf0152a8c2806e1d5e3fc944fbd450'  # noqa
-
 FILENAME_LOG = 'run.log'
 
-DEF_IP_FULL = 'The number of times this ip sent today is full, please try again tomorrow' # noqa
-DEF_MSG_SUCCESS = 'SUCCESS'
-DEF_MSG_FAIL = 'FAIL'
-DEF_MSG_IP_FULL = 'IP IS FULL'
+# 遇到异常发钉钉消息，如果没有，置空，则不发钉钉消息
+DEF_DING_TOKEN = 'da53a62778bcf0152a8c2806e1d5e3fc944fbd450'  # noqa
 
 ############################################################
 # PROXY: ClashX -> Proxy
