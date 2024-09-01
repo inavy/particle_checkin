@@ -13,6 +13,8 @@ from DrissionPage._elements.none_element import NoneElement
 
 from fun_utils import ding_msg
 from fun_utils import get_date
+from fun_utils import load_file
+from fun_utils import save2file
 from proxy_utils import change_proxy
 
 from conf import DEF_LOCAL_PORT
@@ -35,9 +37,16 @@ from conf import DEF_PATH_BROWSER
 from conf import DEF_AUTO_PROXY
 from conf import DEF_PATH_DATA_PROXY
 from conf import DEF_CHECKIN
-
+from conf import DEF_PATH_DATA_STATUS
+from conf import DEF_HEADER_STATUS
 
 """
+2024.09.01
+1. 多个账号的执行结果写到一个文件中
+
+2024.08.30
+1. 切换 IP 后，可能出现异常(与页面的连接已断开)，增加重试
+
 2024.08.29
 1. 在关键确认步骤确保页面加载完成
 self.page.wait.load_start()
@@ -78,25 +87,53 @@ class ParticleTask():
     def __init__(self) -> None:
         self.args = None
         self.page = None
-        self.usdg = -1
-        self.s_today = get_date(is_utc=True)
-        self.file_proxy = f'{DEF_PATH_DATA_PROXY}/proxy_{self.s_today}.csv'
-        self.proxy_name = ''
+        # self.usdg = -1
+        self.proxy_name = 'UNKNOWN(START)'
         self.proxy_info = 'USING'
         self.lst_proxy_cache = []
         self.lst_proxy_black = []
+        self.s_today = get_date(is_utc=True)
+        self.file_proxy = None
+        # self.init_proxy()
 
-        if DEF_AUTO_PROXY:
-            self.lst_proxy_black = self.proxy_load()
-            self.proxy_name = change_proxy(self.lst_proxy_black)
-            logger.info(f'已开启自动更换 Proxy ，当前代理是 {self.proxy_name}')
+        # 账号执行情况
+        self.dic_status = {}
 
     def set_args(self, args):
         self.args = args
+        self.usdg = -1
+        # self.init_proxy()
+        # self.status_load()
 
     def __del__(self):
         self.proxy_save()
+        self.status_save()
         logger.info(f'Exit {self.args.s_profile}')
+
+    def status_load(self):
+        self.file_status = f'{DEF_PATH_DATA_STATUS}/status_{self.s_today}.csv'
+        self.dic_status = load_file(
+            file_in=self.file_status,
+            idx_key=0,
+            header=DEF_HEADER_STATUS
+        )
+
+    def status_save(self):
+        self.file_status = f'{DEF_PATH_DATA_STATUS}/status_{self.s_today}.csv'
+        self.dic_status = save2file(
+            file_ot=self.file_status,
+            dic_status=self.dic_status,
+            idx_key=0,
+            header=DEF_HEADER_STATUS
+        )
+
+    def init_proxy(self):
+        if DEF_AUTO_PROXY:
+            self.s_today = get_date(is_utc=True)
+            self.file_proxy = f'{DEF_PATH_DATA_PROXY}/proxy_{self.s_today}.csv'
+            self.lst_proxy_black = self.proxy_load()
+            self.proxy_name = change_proxy(self.lst_proxy_black)
+            logger.info(f'已开启自动更换 Proxy ，当前代理是 {self.proxy_name}')
 
     def close(self):
         # 在有头浏览器模式 Debug 时，不退出浏览器，用于调试
@@ -112,6 +149,7 @@ class ParticleTask():
         logger.info(f'准备更换 Proxy ，更换前的代理是 {self.proxy_name}')
         self.proxy_name = change_proxy(self.lst_proxy_black)
         logger.info(f'完成更换 Proxy ，更换后的代理是 {self.proxy_name}')
+        self.proxy_info = 'USING'
 
     def proxy_load(self):
         lst_proxy_black = []
@@ -146,6 +184,10 @@ class ParticleTask():
 
         if not self.proxy_name:
             return
+
+        if not self.file_proxy:
+            self.s_today = get_date(is_utc=True)
+            self.file_proxy = f'{DEF_PATH_DATA_PROXY}/proxy_{self.s_today}.csv'
 
         dir_file_out = os.path.dirname(self.file_proxy)
         if dir_file_out and (not os.path.exists(dir_file_out)):
@@ -220,9 +262,16 @@ class ParticleTask():
             pass
 
     def open_okx(self):
+        """
+        https://chrome.google.com/webstore/detail/mcohilncbfahbmgdjkbpemcciiolgcge
+        """
         EXTENSION_ID = 'mcohilncbfahbmgdjkbpemcciiolgcge'
         logger.info('Open okx to login ...')
         self.page.get('chrome-extension://{}/home.html'.format(EXTENSION_ID))
+        if not self.page.wait.load_start():
+            logger.info('打开 OKX 插件页安装插件')
+            self.page.get('https://chrome.google.com/webstore/detail/mcohilncbfahbmgdjkbpemcciiolgcge') # noqa
+            time.sleep(60)
 
         ele_input = self.page.ele('@data-testid=okd-input', timeout=2)
         if not isinstance(ele_input, NoneElement):
@@ -577,7 +626,7 @@ class ParticleTask():
         """
         s_msg = DEF_MSG_FAIL
         for i in range(DEF_NUM_TRY_PURCHASE_NFT):
-            logger.info(f'purchase_nft try_i={i+1} [{self.args.s_profile}]')
+            logger.info(f'purchase_nft try_i={i+1}/{DEF_NUM_TRY_PURCHASE_NFT} [{self.args.s_profile}]') # noqa
             self.page.get('https://pioneer.particle.network/zh-CN/crossChainNFT') # noqa
 
             # logger.info('刷新页面 {}'.format(self.page.url))
@@ -638,6 +687,16 @@ class ParticleTask():
                 logger.info('没有 NETWORK FEE 弹窗，重新开始')
                 continue
             if button.text == 'Purchase':
+                x_path = '/html/body/div[4]/div/div[2]/div/div/div[2]/div[5]/div[1]/div[2]/div[2]' # noqa
+                try:
+                    fee = self.page.ele('x:{}'.format(x_path), timeout=2).text
+                    f_fee = float(fee.replace(',', '').replace('$', ''))
+                    if f_fee > 10:
+                        logger.info(f'Warning! NETWORK FEE is high! {f_fee}')
+                    else:
+                        logger.info(f'NETWORK FEE is ${f_fee}')
+                except: # noqa
+                    pass
                 time.sleep(1)
                 button.click()
             else:
@@ -652,7 +711,7 @@ class ParticleTask():
                 s_msg = DEF_MSG_IP_FULL
                 break
 
-            logger.info('SUCCESSFUL 弹窗加载中 ...')
+            logger.info('Wait SUCCESSFUL 弹窗 ...')
             time.sleep(1)
             self.page.wait.load_start()
             logger.info('正在确认 SUCCESSFUL 弹窗 ...')
@@ -718,9 +777,11 @@ class ParticleTask():
 
             # 选择登录的钱包
             x_path = '/html/body/div[1]/div[1]/div/div[1]/div[4]/div[3]/div[1]/button' # noqa
+            self.page.wait.eles_loaded('x:{}'.format(x_path))
+            self.page.actions.move_to('x:{}'.format(x_path))
             button = self.page.ele('x:{}'.format(x_path))
             logger.info('正在点击 OKX WALLET 连接 OKX 钱包 ...')
-            button.click()
+            button.click(by_js=True)
 
             # OKX Wallet 连接
             logger.info('OKX Wallet 连接')
@@ -852,25 +913,76 @@ def main(args):
 
         args.s_profile = s_profile
 
-        try:
-            instParticleTask.set_args(args)
-            instParticleTask.initChrome(s_profile)
-            instParticleTask.open_okx()
-            instParticleTask.particle_init()
+        # 切换 IP 后，可能出现异常(与页面的连接已断开)，增加重试
+        max_try_except = 3
+        for j in range(1, max_try_except+1):
+            try:
+                if j > 1:
+                    logger.info(f'异常重试，当前是第{j}次执行，最多尝试{max_try_except}次 [{s_profile}]') # noqa
+                instParticleTask.set_args(args)
+                instParticleTask.status_load()
 
-            is_checked_in = instParticleTask.check_in()
-            (nft_purchased, nft_limit) = instParticleTask.particle_nft()
-            instParticleTask.close()
+                if s_profile in instParticleTask.dic_status:
+                    lst_status = instParticleTask.dic_status[s_profile]
 
-            if is_checked_in:
-                d_checkin[s_profile] = 'DONE'
-            else:
-                d_checkin[s_profile] = 'XXXXXXXXXX'
-            d_nft_purchased[s_profile] = nft_purchased
-            d_nft_limit[s_profile] = nft_limit
-            d_usdg[s_profile] = instParticleTask.usdg
-        except Exception as e:
-            logger.info(f'[{s_profile}] An error occurred: {str(e)}')
+                    d_checkin[s_profile] = lst_status[1]
+                    d_nft_purchased[s_profile] = lst_status[2]
+                    d_nft_limit[s_profile] = lst_status[3]
+                    d_usdg[s_profile] = lst_status[4]
+                else:
+                    lst_status = None
+
+                run_checkin = True
+                if lst_status and lst_status[1] == 'DONE':
+                    is_checked_in = True
+                    run_checkin = False
+                    logger.info(f'[{s_profile}] Check-in 已完成')
+
+                run_nft = True
+                if lst_status:
+                    nft_purchased = int(lst_status[2])
+                    nft_limit = int(lst_status[3])
+                    if nft_purchased == DEF_NUM_NFT:
+                        run_nft = False
+                        logger.info(f'[{s_profile}] NFT PURCHASE 已完成')
+
+                if run_checkin or run_nft:
+                    # instParticleTask.init_proxy()
+                    instParticleTask.initChrome(s_profile)
+                    instParticleTask.open_okx()
+                    instParticleTask.particle_init()
+
+                    if run_checkin:
+                        is_checked_in = instParticleTask.check_in()
+                    if run_nft:
+                        (nft_purchased, nft_limit) = instParticleTask.particle_nft() # noqa
+
+                    instParticleTask.close()
+
+                    if is_checked_in:
+                        d_checkin[s_profile] = 'DONE'
+                    else:
+                        d_checkin[s_profile] = 'XXXXXXXXXX'
+                    d_nft_purchased[s_profile] = nft_purchased
+                    d_nft_limit[s_profile] = nft_limit
+                    d_usdg[s_profile] = instParticleTask.usdg
+
+                    instParticleTask.dic_status[s_profile] = [
+                        s_profile,
+                        d_checkin[s_profile],
+                        nft_purchased,
+                        nft_limit,
+                        instParticleTask.usdg
+                    ]
+                    instParticleTask.status_save()
+                else:
+                    pass
+
+                break
+            except Exception as e:
+                logger.info(f'[{s_profile}] An error occurred: {str(e)}')
+                if j < max_try_except:
+                    time.sleep(5)
 
         logger.info('Finish')
 
@@ -910,6 +1022,7 @@ if __name__ == '__main__':
     生成 p001 到 p020 的列表
     每次随机取一个出来，并从原列表中删除，直到原列表为空
     """
+    # time.sleep(60*60)
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--num_purse', required=False, default=20, type=int,

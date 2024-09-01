@@ -1,6 +1,7 @@
 """
 utils
 """
+import os
 import sys
 import json
 import requests
@@ -131,9 +132,88 @@ def get_date(is_utc=True):
     return s_date
 
 
+def load_file(file_in, idx_key=0, header=''):
+    """
+    Return:
+        dict(key, list)
+    """
+    d_ret = {}
+    try:
+        with open(file_in, 'r') as fp:
+            # Skip the header line
+            next(fp)
+            for line in fp:
+                if len(line.strip()) == 0:
+                    continue
+                # 逗号分隔，字段中不能包含逗号
+                fields = line.strip().split(',')
+                s_key = fields[idx_key]
+                d_ret[s_key] = fields
+    except StopIteration:
+        # print("File is empty.")
+        pass
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f'[load_file] An error occurred: {str(e)}')
+
+    return d_ret
+
+
+def save2file(file_ot, dic_status, idx_key=0, header=''):
+    """
+    header: 表头
+    dic_status: 输出的字段列表
+    idx_key: dic_status value 的主键下标
+    """
+    b_ret = True
+    s_msg = ''
+
+    dir_file_out = os.path.dirname(file_ot)
+    if dir_file_out and (not os.path.exists(dir_file_out)):
+        os.makedirs(dir_file_out)
+
+    if not os.path.exists(file_ot):
+        with open(file_ot, 'w') as fp:
+            fp.write(f'{header}\n')
+
+    try:
+        # 先读取原有内容，合并至 dic_status
+        if os.path.exists(file_ot):
+            with open(file_ot, 'r') as fp:
+                lines = fp.readlines()
+                for line in lines[1:]:  # 跳过表头
+                    fields = line.strip().split(',')
+                    if len(fields) == 0:
+                        continue
+                    s_key = fields[idx_key]
+                    if s_key in dic_status:
+                        continue
+                    dic_status[s_key] = fields
+
+        lst_sorted = sorted(dic_status.keys())
+        with open(file_ot, 'w') as fp:
+            fp.write(f'{header}\n')
+            for s_key in lst_sorted:
+                s_out = ','.join(str(item) for item in dic_status[s_key])
+                fp.write(f'{s_out}\n')
+    except Exception as e:
+        b_ret = False
+        s_msg = f'[save2file] An error occurred: {str(e)}'
+
+    return (b_ret, s_msg)
+
+
 if __name__ == "__main__":
     """
     """
+
+    file_test = 'ttt.csv'
+    dic_status = load_file(file_test, idx_key=0, header='')
+    dic_status['p005'] = ['p005', 'DONE', 10, 5, -1]
+    save2file(file_test, dic_status, idx_key=0, header='header')
+    sys.exit(-1)
+
     s_token = 'ff930a850a7feebb7db0ea1f0e5b3032f175dab'  # noqa
     d_cont = {
         'title': 'my title',

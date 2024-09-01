@@ -39,6 +39,10 @@ FILENAME_LOG = 'run.log'
 # 遇到异常发钉钉消息，如果没有，置空，则不发钉钉消息
 DEF_DING_TOKEN = 'da53a62778bcf0152a8c2806e1d5e3fc944fbd450'  # noqa
 
+# 记录账号状态信息
+DEF_PATH_DATA_STATUS = 'datas/status'
+DEF_HEADER_STATUS = 'account,checkin,nft_purchased,nft_limit,balance'
+
 ############################################################
 # PROXY: ClashX -> Proxy
 DEF_AUTO_PROXY = True
