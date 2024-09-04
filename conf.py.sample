@@ -1,6 +1,8 @@
 """
 Config File Sample
 """
+import logging
+
 # 本地启动端口
 # 查看端口是否被占用 netstat -ant|grep 9551
 DEF_LOCAL_PORT = 9551
@@ -9,7 +11,7 @@ DEF_LOCAL_PORT = 9551
 DEF_USE_HEADLESS = True
 
 # 调试模式
-DEF_DEBUG = True
+DEF_DEBUG = False
 
 # 浏览器路径，置空时取 Chrome 的默认路径
 # DEF_PATH_BROWSER = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' # noqa
@@ -32,7 +34,7 @@ DEF_NUM_TRY_CHECKIN = 5
 DEF_NUM_TRY_PURCHASE_NFT = 5
 
 # 余额不足时提醒
-DEF_BALANCE_USDG_MIN = 20
+DEF_BALANCE_USDG_MIN = 30
 
 FILENAME_LOG = 'run.log'
 
@@ -50,25 +52,17 @@ DEF_AUTO_PROXY = True
 # 记录每天的 PROXY 使用情况
 DEF_PATH_DATA_PROXY = 'datas/proxy'
 
-# 主显示器的宽度和高度
-DEF_SCREEN_WIDTH = 1512
-DEF_SCREEN_HEIGHT = 982
-
-# Proxy 每个选项的高度
-DEF_HEIGHT_ITEM = 22
-
-# ClashX 图标的位置
-DEF_ICON_XY = [1122, 22]
-# proxy 菜单位置
-DEF_PROXY_XY = [1122, 90]
-# Proxy 列表中第一个选项的 [X, Y]
-DEF_START_XY = [800, 288]
-
-# Proxy 列表
-DEF_PROXY_LIST = [
-    'Australia-AU-1',
-    'Australia-AU-2',
-    'Australia-AU-3',
-    'Australia-AU-4'
-]
 ############################################################
+# ClashX API
+DEF_CLASH_API_PORT = 9090
+DEF_CLASH_API_SECRETKEY = 'API_SECRETKEY'
+############################################################
+
+# 配置日志
+s_format = '%(asctime)s %(levelname)s %(message)s'
+logging.basicConfig(
+    filename=FILENAME_LOG, level=logging.INFO,
+    format=s_format,
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)

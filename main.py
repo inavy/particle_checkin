@@ -1,7 +1,6 @@
 import os
 import sys # noqa
 import argparse
-import logging
 import random
 import re
 import time
@@ -15,7 +14,9 @@ from fun_utils import ding_msg
 from fun_utils import get_date
 from fun_utils import load_file
 from fun_utils import save2file
-from proxy_utils import change_proxy
+# from proxy_utils import change_proxy
+from proxy_api import change_proxy
+from proxy_api import get_proxy_current
 
 from conf import DEF_LOCAL_PORT
 from conf import DEF_USE_HEADLESS
@@ -30,7 +31,6 @@ from conf import DEF_NUM_NFT
 from conf import DEF_NUM_TRY_CHECKIN
 from conf import DEF_NUM_TRY_PURCHASE_NFT
 from conf import DEF_DING_TOKEN
-from conf import FILENAME_LOG
 from conf import DEF_BALANCE_USDG_MIN
 from conf import DEF_MSG_BALANCE_ERR
 from conf import DEF_PATH_BROWSER
@@ -39,8 +39,12 @@ from conf import DEF_PATH_DATA_PROXY
 from conf import DEF_CHECKIN
 from conf import DEF_PATH_DATA_STATUS
 from conf import DEF_HEADER_STATUS
+from conf import logger
 
 """
+2024.09.04
+1. 通过 ClashX API 切换代理
+
 2024.09.01
 1. 多个账号的执行结果写到一个文件中
 
@@ -73,15 +77,6 @@ https://drissionpage.cn/QandA
 5. 支持无头浏览器模式
 """
 
-# 配置日志
-s_format = '%(asctime)s %(levelname)s %(message)s'
-logging.basicConfig(
-    filename=FILENAME_LOG, level=logging.INFO,
-    format=s_format,
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger(__name__)
-
 
 class ParticleTask():
     def __init__(self) -> None:
@@ -94,7 +89,7 @@ class ParticleTask():
         self.lst_proxy_black = []
         self.s_today = get_date(is_utc=True)
         self.file_proxy = None
-        # self.init_proxy()
+        self.init_proxy()
 
         # 账号执行情况
         self.dic_status = {}
@@ -102,8 +97,8 @@ class ParticleTask():
     def set_args(self, args):
         self.args = args
         self.usdg = -1
-        # self.init_proxy()
-        # self.status_load()
+        self.init_proxy()
+        self.status_load()
 
     def __del__(self):
         self.proxy_save()
@@ -268,7 +263,10 @@ class ParticleTask():
         EXTENSION_ID = 'mcohilncbfahbmgdjkbpemcciiolgcge'
         logger.info('Open okx to login ...')
         self.page.get('chrome-extension://{}/home.html'.format(EXTENSION_ID))
-        if not self.page.wait.load_start():
+        self.page.wait.load_start()
+
+        # 页面上如果没有Web3，可能是没有安装插件
+        if not self.page.ele('Web3', timeout=2):
             logger.info('打开 OKX 插件页安装插件')
             self.page.get('https://chrome.google.com/webstore/detail/mcohilncbfahbmgdjkbpemcciiolgcge') # noqa
             time.sleep(60)
@@ -316,7 +314,11 @@ class ParticleTask():
 
     def check_network(self):
         if len(self.page.html) == 0:
+            s_proxy_pre = self.proxy_name
             logger.info('无法获取页面内容，请检查网络')
+            if DEF_AUTO_PROXY:
+                self.proxy_update(DEF_MSG_FAIL)
+
             if len(DEF_DING_TOKEN) > 0:
                 d_cont = {
                     'title': '无法获取页面内容',
@@ -324,17 +326,17 @@ class ParticleTask():
                         '- 页面为空\n'
                         '- 请检查网络\n'
                         '- profile: {s_profile}\n'
-                        '- proxy: {s_proxy}\n'
+                        '- proxy_pre: {s_proxy_pre}\n'
+                        '- proxy_now: {s_proxy_now}\n'
                         .format(
                             s_profile=self.args.s_profile,
-                            s_proxy=self.proxy_name
+                            s_proxy_pre=s_proxy_pre,
+                            s_proxy_now=self.proxy_name
                         )
                     )
                 }
                 ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
             self.page.quit()
-            if DEF_AUTO_PROXY:
-                self.proxy_update(DEF_MSG_FAIL)
             # sys.exit(-1)
 
         try:
@@ -342,7 +344,12 @@ class ParticleTask():
             x_path = '//*[@id="error-information-popup-content"]/div[2]'
             s_info = self.page.ele('x:{}'.format(x_path), timeout=2).text
             if 'ERR_CONNECTION_RESET' == s_info:
+                s_proxy_pre = self.proxy_name
                 logger.info('无法访问此网站')
+
+                if DEF_AUTO_PROXY:
+                    self.proxy_update(DEF_MSG_FAIL)
+
                 if len(DEF_DING_TOKEN) > 0:
                     d_cont = {
                         'title': 'Network Error',
@@ -350,17 +357,17 @@ class ParticleTask():
                             '- 无法访问此网站\n'
                             '- 连接已重置\n'
                             '- profile: {s_profile}\n'
-                            '- proxy: {s_proxy}\n'
+                            '- proxy_pre: {s_proxy_pre}\n'
+                            '- proxy_now: {s_proxy_now}\n'
                             .format(
                                 s_profile=self.args.s_profile,
-                                s_proxy=self.proxy_name
+                                s_proxy_pre=s_proxy_pre,
+                                s_proxy_now=self.proxy_name
                             )
                         )
                     }
                     ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
                 self.page.quit()
-                if DEF_AUTO_PROXY:
-                    self.proxy_update(DEF_MSG_FAIL)
                 # sys.exit(-1)
         except: # noqa
             pass
@@ -374,6 +381,12 @@ class ParticleTask():
             logger.info('toastify={}'.format(toastify))
 
         if toastify == DEF_IP_FULL:
+            # s_proxy_pre = self.proxy_name
+            s_proxy_pre = get_proxy_current()
+            if DEF_AUTO_PROXY:
+                self.proxy_update(DEF_MSG_IP_FULL)
+                time.sleep(3)
+
             if len(DEF_DING_TOKEN) > 0:
                 d_cont = {
                     'title': 'ip is full',
@@ -381,10 +394,12 @@ class ParticleTask():
                         '- The number of times this ip sent today is full\n'
                         '- please try again tomorrow\n'
                         '- profile: {s_profile}\n'
-                        '- proxy: {s_proxy}\n'
+                        '- proxy_pre: {s_proxy_pre}\n'
+                        '- proxy_now: {s_proxy_now}\n'
                         .format(
                             s_profile=self.args.s_profile,
-                            s_proxy=self.proxy_name
+                            s_proxy_pre=s_proxy_pre,
+                            s_proxy_now=self.proxy_name
                         )
                     )
                 }
@@ -394,8 +409,6 @@ class ParticleTask():
             self.page.quit()
 
             if DEF_AUTO_PROXY:
-                self.proxy_update(DEF_MSG_IP_FULL)
-                time.sleep(3)
                 return False
             else:
                 return True
@@ -920,7 +933,6 @@ def main(args):
                 if j > 1:
                     logger.info(f'异常重试，当前是第{j}次执行，最多尝试{max_try_except}次 [{s_profile}]') # noqa
                 instParticleTask.set_args(args)
-                instParticleTask.status_load()
 
                 if s_profile in instParticleTask.dic_status:
                     lst_status = instParticleTask.dic_status[s_profile]
