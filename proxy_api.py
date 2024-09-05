@@ -122,9 +122,11 @@ def get_proxy_list():
             continue
         if proxy_name in d_proxies:
             lst_history = d_proxies[proxy_name]['history']
-            if len(lst_history) == 1:
-                mean_delay = lst_history[0]['meanDelay']
-                # print(proxy_name, mean_delay)
+            if len(lst_history) >= 1:
+                mean_delay = lst_history[-1]['meanDelay']
+                # 过滤延迟是0的记录
+                if mean_delay < 1:
+                    continue
                 lst_available.append([proxy_name, mean_delay])
             else:
                 # print(proxy_name)

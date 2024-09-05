@@ -21,7 +21,7 @@ pip install -r requirements.txt -i https://pypi.doubanio.com/simple
 ```
 cd particle_checkin/
 cp conf.py.sample conf.py
-python mail.py
+python main.py
 ```
 
 # OKX Plugin

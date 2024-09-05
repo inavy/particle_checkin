@@ -42,6 +42,9 @@ from conf import DEF_HEADER_STATUS
 from conf import logger
 
 """
+2024.09.05
+1. 增加启动参数
+
 2024.09.04
 1. 通过 ClashX API 切换代理
 
@@ -294,7 +297,7 @@ class ParticleTask():
 
     def okx_confirm(self):
         logger.info('准备 OKX Wallet Confirm ...')
-        # self.page.wait.load_start()
+        self.page.wait.load_start()
         # 当出现 cloudflare 时，勾选
         try:
             button = self.page.ele('x://*[@id="RlquG0"]/div/label/input')
@@ -321,7 +324,7 @@ class ParticleTask():
 
             if len(DEF_DING_TOKEN) > 0:
                 d_cont = {
-                    'title': '无法获取页面内容',
+                    'title': '无法获取页面内容 [Particle]',
                     'text': (
                         '- 页面为空\n'
                         '- 请检查网络\n'
@@ -337,7 +340,6 @@ class ParticleTask():
                 }
                 ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
             self.page.quit()
-            # sys.exit(-1)
 
         try:
             # 检查网络连接是否正常
@@ -368,7 +370,6 @@ class ParticleTask():
                     }
                     ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
                 self.page.quit()
-                # sys.exit(-1)
         except: # noqa
             pass
 
@@ -898,11 +899,16 @@ class ParticleTask():
 
 
 def main(args):
+    if args.sleep_sec_at_start > 0:
+        logger.info(f'Sleep {args.sleep_sec_at_start} seconds at start !!!') # noqa
+        time.sleep(args.sleep_sec_at_start)
+
     if len(args.profile) > 0:
         items = args.profile.split(',')
     else:
         # 生成 p001 到 p020 的列表
-        items = [f'p{i:03d}' for i in range(1, args.num_purse+1)] # noqa
+        # items = [f'p{i:03d}' for i in range(1, args.num_purse+1)] # noqa
+        items = [f'p{i:03d}' for i in range(args.purse_start_id, args.purse_end_id+1)] # noqa
         # items = ['p012']
         # items = ['p012', 'p015']
 
@@ -999,9 +1005,7 @@ def main(args):
         logger.info('Finish')
 
         if len(items) > 0:
-            # sleep_time = random.randint(1*60, 10*60)
-            # sleep_time = random.randint(10, 30)
-            sleep_time = 2
+            sleep_time = random.randint(args.sleep_sec_min, args.sleep_sec_max)
             if sleep_time > 60:
                 logger.info('sleep {} minutes ...'.format(int(sleep_time/60)))
             else:
@@ -1031,14 +1035,30 @@ def main(args):
 
 if __name__ == '__main__':
     """
-    生成 p001 到 p020 的列表
+    生成 p001 到 p999 的列表
+    例如 ['p001', 'p002', 'p003', ...]
     每次随机取一个出来，并从原列表中删除，直到原列表为空
     """
-    # time.sleep(60*60)
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--num_purse', required=False, default=20, type=int,
-        help='[默认为 20] 账号数量'
+        '--purse_start_id', required=False, default=1, type=int,
+        help='[默认为 1] 首个账号 ID'
+    )
+    parser.add_argument(
+        '--purse_end_id', required=False, default=20, type=int,
+        help='[默认为 20] 最后一个账号的 ID'
+    )
+    parser.add_argument(
+        '--sleep_sec_min', required=False, default=3, type=int,
+        help='[默认为 3] 每个账号执行完 sleep 的最小时长(单位是秒)'
+    )
+    parser.add_argument(
+        '--sleep_sec_max', required=False, default=10, type=int,
+        help='[默认为 10] 每个账号执行完 sleep 的最大时长(单位是秒)'
+    )
+    parser.add_argument(
+        '--sleep_sec_at_start', required=False, default=0, type=int,
+        help='[默认为 0] 在启动后先 sleep 的时长(单位是秒)'
     )
     parser.add_argument(
         '--profile', required=False, default='',

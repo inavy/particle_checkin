@@ -47,7 +47,7 @@ DEF_HEADER_STATUS = 'account,checkin,nft_purchased,nft_limit,balance'
 
 ############################################################
 # PROXY: ClashX -> Proxy
-DEF_AUTO_PROXY = True
+DEF_AUTO_PROXY = False
 
 # 记录每天的 PROXY 使用情况
 DEF_PATH_DATA_PROXY = 'datas/proxy'
