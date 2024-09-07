@@ -23,6 +23,7 @@ DEF_PWD = 'default_password@'
 
 DEF_IP_FULL = 'The number of times this ip sent today is full, please try again tomorrow' # noqa
 DEF_CHECKIN = 'Already checked-in'
+DEF_UNCOMPLETE = 'You have an uncompleted transaction, please wait for the previous transaction to be completed' # noqa
 
 DEF_MSG_SUCCESS = 'SUCCESS'
 DEF_MSG_FAIL = 'FAIL'
