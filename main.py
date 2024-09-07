@@ -37,11 +37,15 @@ from conf import DEF_PATH_BROWSER
 from conf import DEF_AUTO_PROXY
 from conf import DEF_PATH_DATA_PROXY
 from conf import DEF_CHECKIN
+from conf import DEF_UNCOMPLETE
 from conf import DEF_PATH_DATA_STATUS
 from conf import DEF_HEADER_STATUS
 from conf import logger
 
 """
+2024.09.06
+1. Check uncompleted transaction
+
 2024.09.05
 1. 增加启动参数
 
@@ -373,13 +377,31 @@ class ParticleTask():
         except: # noqa
             pass
 
+    def check_toastify(self, s_tag=''):
+        try:
+            toastify = self.page.ele('x://*[@id="1"]/div[1]/div[2]', timeout=2).text # noqa
+        except: # noqa
+            toastify = ''
+
+        if len(toastify) > 0:
+            if len(s_tag) > 0:
+                logger.info(f'check toastify={toastify} [{s_tag}]')
+            else:
+                logger.info(f'check toastify={toastify}')
+
+        if toastify == DEF_UNCOMPLETE:
+            sleep_time = random.randint(30, 120)
+            logger.info(f'Wait transaction to complete. Sleep {sleep_time} seconds ...') # noqa
+            time.sleep(sleep_time)
+
     def check_ip_full(self):
         try:
             toastify = self.page.ele('x://*[@id="1"]/div[1]/div[2]', timeout=2).text # noqa
         except: # noqa
             toastify = ''
+
         if len(toastify) > 0:
-            logger.info('toastify={}'.format(toastify))
+            logger.info(f'check toastify={toastify}')
 
         if toastify == DEF_IP_FULL:
             # s_proxy_pre = self.proxy_name
@@ -651,6 +673,7 @@ class ParticleTask():
             self.page.wait.load_start()
 
             x_path = '//*[@id="content-wrapper"]/div/div[2]/div[1]/div[3]/div[2]/div[4]/button/div[1]' # noqa
+            self.page.wait.eles_loaded(f'x:{x_path}', timeout=3) # noqa
             button = self.page.ele('x:{}'.format(x_path), timeout=2)
             if button and button.text == 'Purchase':
                 button.click()
@@ -682,7 +705,8 @@ class ParticleTask():
 
             logger.info('准备 Click Next BUTTON ...')
             x_path = '/html/body/div[4]/div/div[2]/div/div/div[2]/div[6]/button/div[1]' # noqa
-            button = self.page.ele('x:{}'.format(x_path))
+            self.page.wait.eles_loaded(f'x:{x_path}', timeout=3) # noqa
+            button = self.page.ele(f'x:{x_path}', timeout=3) # noqa
             if button.text == 'Next':
                 time.sleep(1)
                 if button.states.is_clickable:
@@ -694,9 +718,12 @@ class ParticleTask():
                 logger.info('没有 Next 按钮，重新开始')
                 continue
 
+            self.check_toastify('S1')
+
             logger.info('准备在 NETWORK FEE 弹窗点击 PURCHASE 按钮 ...')
             x_path = '/html/body/div[4]/div/div[2]/div/div/button/div[1]'
-            button = self.page.ele('x:{}'.format(x_path))
+            self.page.wait.eles_loaded(f'x:{x_path}', timeout=3) # noqa
+            button = self.page.ele(f'x:{x_path}', timeout=3) # noqa
             if isinstance(button, NoneElement):
                 logger.info('没有 NETWORK FEE 弹窗，重新开始')
                 continue
@@ -717,10 +744,15 @@ class ParticleTask():
                 logger.info('没有 PURCHASE 按钮，重新开始')
                 continue
 
+            self.check_toastify('S2')
+
             # 此处可能会出现 CLOUDFLARE 5秒盾，留点时间
             time.sleep(3)
 
             self.okx_confirm()
+
+            self.check_toastify('S3')
+
             if self.check_ip_full():
                 s_msg = DEF_MSG_IP_FULL
                 break
