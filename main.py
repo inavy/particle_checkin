@@ -89,28 +89,40 @@ class ParticleTask():
     def __init__(self) -> None:
         self.args = None
         self.page = None
-        # self.usdg = -1
+
+        self.is_update = False
+        self.is_checked_in = False
+        self.nft_purchased = -1
+        self.nft_limit = -1
+        self.usdg = -1
+
         self.proxy_name = 'UNKNOWN(START)'
         self.proxy_info = 'USING'
         self.lst_proxy_cache = []
         self.lst_proxy_black = []
         self.s_today = get_date(is_utc=True)
         self.file_proxy = None
-        self.init_proxy()
+        # self.init_proxy()
 
         # 账号执行情况
         self.dic_status = {}
 
     def set_args(self, args):
         self.args = args
+
+        self.is_update = False
+        self.is_checked_in = False
+        self.nft_purchased = 0
+        self.nft_limit = -1
         self.usdg = -1
-        self.init_proxy()
+
+        # self.init_proxy()
         self.status_load()
 
     def __del__(self):
         self.proxy_save()
         self.status_save()
-        logger.info(f'Exit {self.args.s_profile}')
+        # logger.info(f'Exit {self.args.s_profile}')
 
     def status_load(self):
         self.file_status = f'{DEF_PATH_DATA_STATUS}/status_{self.s_today}.csv'
@@ -121,8 +133,19 @@ class ParticleTask():
         )
 
     def status_save(self):
+        if self.is_checked_in:
+            s_check_in = 'DONE'
+        else:
+            s_check_in = 'XXXXXXXXXX'
+        self.dic_status[self.args.s_profile] = [
+            self.args.s_profile,
+            s_check_in,
+            self.nft_purchased,
+            self.nft_limit,
+            self.usdg
+        ]
         self.file_status = f'{DEF_PATH_DATA_STATUS}/status_{self.s_today}.csv'
-        self.dic_status = save2file(
+        save2file(
             file_ot=self.file_status,
             dic_status=self.dic_status,
             idx_key=0,
@@ -268,36 +291,87 @@ class ParticleTask():
         https://chrome.google.com/webstore/detail/mcohilncbfahbmgdjkbpemcciiolgcge
         """
         EXTENSION_ID = 'mcohilncbfahbmgdjkbpemcciiolgcge'
-        logger.info('Open okx to login ...')
-        self.page.get('chrome-extension://{}/home.html'.format(EXTENSION_ID))
-        self.page.wait.load_start()
 
-        # 页面上如果没有Web3，可能是没有安装插件
-        if not self.page.ele('Web3', timeout=2):
-            logger.info('打开 OKX 插件页安装插件')
-            self.page.get('https://chrome.google.com/webstore/detail/mcohilncbfahbmgdjkbpemcciiolgcge') # noqa
-            time.sleep(60)
+        def get_balance():
+            x_path = '//*[@id="home-page-root-element-id"]/div[2]/div'
+            balance = self.page.ele('x:{}'.format(x_path), timeout=2)
+            if not isinstance(balance, NoneElement):
+                return balance.text
+            return None
 
-        ele_input = self.page.ele('@data-testid=okd-input', timeout=2)
-        if not isinstance(ele_input, NoneElement):
-            logger.info('OKX 输入密码')
-            ele_input.input(DEF_PWD)
-            logger.info('OKX 登录')
-            self.page.ele('@data-testid=okd-button').click()
+        max_try = 5
+        for i in range(1, max_try+1):
+            logger.info(f'Open okx to login {i}/{max_try} ...')
+            self.page.get('chrome-extension://{}/home.html'.format(EXTENSION_ID))
+            self.page.wait.load_start()
 
-        x_path = '//*[@id="home-page-root-element-id"]/div[2]/div'
-        balance = self.page.ele('x:{}'.format(x_path), timeout=2)
-        if not isinstance(balance, NoneElement):
-            logger.info('账户余额：{}'.format(balance.text))
-        else:
-            logger.info(
-                'ERROR! okx is invalid! profile:{}'
-                .format(self.args.s_profile)
-            )
-            if DEF_USE_HEADLESS:
-                self.page.quit()
-            # sys.exit(-1)
-        logger.info('okx login success')
+            balance = get_balance()
+            if balance and balance != '--':
+                logger.info(f'okx 已经是登录状态了. 账户余额:{balance} [{self.args.s_profile}]') # noqa
+                return True
+
+            # 页面上如果没有Web3，可能是没有安装插件
+            if not self.page.ele('Web3', timeout=2):
+                logger.info('打开 OKX 插件页，判断插件是否已经安装')
+                self.page.get('https://chrome.google.com/webstore/detail/mcohilncbfahbmgdjkbpemcciiolgcge') # noqa
+                self.page.wait.load_start()
+
+                # 根据 button 判断插件是否已经安装(Remove from Chrome)
+                s_path = 'tag:span@|text():Remove from@|text():移除'
+                self.page.wait.eles_loaded(f'{s_path}')
+                button = self.page.ele(f'{s_path}', timeout=2)
+                if isinstance(button, NoneElement):
+                    logger.info('插件未安装，需要手动安装 ...')
+
+                    if len(DEF_DING_TOKEN) > 0:
+                        d_cont = {
+                            'title': 'OKX 插件未安装 [Particle]',
+                            'text': (
+                                '- OKX 插件未安装\n'
+                                '- profile: {s_profile}\n'
+                                .format(
+                                    s_profile=self.args.s_profile
+                                )
+                            )
+                        }
+                        ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
+
+                    return False
+                else:
+                    logger.info('插件已安装，重试登录 ...')
+                    time.sleep(3)
+                    continue
+
+            ele_input = self.page.ele('@data-testid=okd-input', timeout=2)
+            if not isinstance(ele_input, NoneElement):
+                logger.info('OKX 输入密码')
+                ele_input.input(DEF_PWD)
+                logger.info('OKX 登录')
+                self.page.ele('@data-testid=okd-button').click()
+
+            balance = get_balance()
+            if balance and balance != '--':
+                logger.info(f'okx login success. 账户余额:{balance} [{self.args.s_profile}]') # noqa
+                return True
+            logger.info('未获取到账户余额，重试 ...')
+
+            # x_path = '//*[@id="home-page-root-element-id"]/div[2]/div'
+            # balance = self.page.ele('x:{}'.format(x_path), timeout=2)
+            # if not isinstance(balance, NoneElement):
+            #     logger.info('账户余额：{}'.format(balance.text))
+            #     if balance.text != '--':
+            #         logger.info('okx login success')
+            #         return True
+            #     logger.info('未获取到账户余额，重试 ...')
+            # else:
+            #     logger.info(
+            #         'ERROR! okx is invalid! profile:{}'
+            #         .format(self.args.s_profile)
+            #     )
+            #     if DEF_USE_HEADLESS:
+            #         self.page.quit()
+            time.sleep(3)
+        return False
 
     def okx_confirm(self):
         logger.info('准备 OKX Wallet Confirm ...')
@@ -392,7 +466,8 @@ class ParticleTask():
         if toastify == DEF_UNCOMPLETE:
             sleep_time = random.randint(30, 120)
             logger.info(f'Wait transaction to complete. Sleep {sleep_time} seconds ...') # noqa
-            time.sleep(sleep_time)
+            # time.sleep(sleep_time)
+            raise Exception(DEF_UNCOMPLETE)
 
     def check_ip_full(self):
         try:
@@ -467,6 +542,9 @@ class ParticleTask():
 
             if button.text == 'Checked in':
                 logger.info('Oh! Check-in is already done before!')
+                self.is_checked_in = True
+                self.is_update = True
+                self.status_save()
                 return True
 
             if button.text == 'Check-in':
@@ -482,6 +560,9 @@ class ParticleTask():
             if len(toastify) > 0:
                 if toastify == DEF_CHECKIN:
                     logger.info('Check-in is success!')
+                    self.is_checked_in = True
+                    self.is_update = True
+                    self.status_save()
                     return True
                 else:
                     logger.info('toastify={}'.format(toastify))
@@ -618,6 +699,8 @@ class ParticleTask():
                 # 输出结果
                 # print(numbers)  # 输出: [11, 5]
                 if len(numbers) == 2:
+                    self.nft_purchased = numbers[0]
+                    self.nft_limit = numbers[1]
                     num_ret = numbers
                     break
             else:
@@ -757,9 +840,28 @@ class ParticleTask():
                 s_msg = DEF_MSG_IP_FULL
                 break
 
-            logger.info('Wait SUCCESSFUL 弹窗 ...')
             time.sleep(1)
-            self.page.wait.load_start()
+
+            # 此处最多等60秒
+            max_wait_sec = 60
+            logger.info(f'Wait SUCCESSFUL 弹窗 (最多等 {max_wait_sec} 秒) ...')
+            for i_wait in range(1, max_wait_sec):
+                x_path = '/html/body/div[4]/div/div[2]/div/div/div[1]'
+                button = self.page.ele('x:{}'.format(x_path), timeout=2)
+                if isinstance(button, NoneElement):
+                    logger.info(f'等待 SUCCESSFUL 弹窗 {i_wait}/{max_wait_sec}')
+                    time.sleep(1)
+                    continue
+                else:
+                    if button.text.startswith('Preview'):
+                        logger.info(f'当前在 Preview 窗口 {i_wait}/{max_wait_sec}')
+                        time.sleep(1)
+                        continue
+                    else:
+                        logger.info(f'离开 Preview 窗口 {i_wait}/{max_wait_sec}')
+                        break
+
+            # self.page.wait.load_start()
             logger.info('正在确认 SUCCESSFUL 弹窗 ...')
             # 出现 SUCCESSFUL 弹窗，需要等待几秒
             x_path = '/html/body/div[4]/div/div[2]/div/div/div[1]'
@@ -776,8 +878,11 @@ class ParticleTask():
                     try:
                         self.page.ele('x:{}'.format(x_path)).click()
                         logger.info(f'关闭弹窗 {button.text}')
+                        self.nft_purchased += 1
+                        self.is_update = True
+                        self.status_save()
                     except: # noqa
-                        logger.info('未能 SUCCESSFUL 弹窗，忽略')
+                        logger.info('未能关闭 SUCCESSFUL 弹窗，忽略')
                         pass
                 else:
                     logger.info('button.text:{}'.format(button.text))
@@ -822,12 +927,15 @@ class ParticleTask():
             button.click()
 
             # 选择登录的钱包
-            x_path = '/html/body/div[1]/div[1]/div/div[1]/div[4]/div[3]/div[1]/button' # noqa
-            self.page.wait.eles_loaded('x:{}'.format(x_path))
-            self.page.actions.move_to('x:{}'.format(x_path))
-            button = self.page.ele('x:{}'.format(x_path))
-            logger.info('正在点击 OKX WALLET 连接 OKX 钱包 ...')
-            button.click(by_js=True)
+            try:
+                x_path = '/html/body/div[1]/div[1]/div/div[1]/div[4]/div[3]/div[1]/button' # noqa
+                self.page.wait.eles_loaded('x:{}'.format(x_path))
+                self.page.actions.move_to('x:{}'.format(x_path))
+                button = self.page.ele('x:{}'.format(x_path), timeout=2)
+                logger.info('正在点击 OKX WALLET 连接 OKX 钱包 ...')
+                button.click(by_js=True)
+            except:
+                pass
 
             # OKX Wallet 连接
             logger.info('OKX Wallet 连接')
@@ -839,7 +947,7 @@ class ParticleTask():
                 try:
                     tab_id = self.page.latest_tab
                     tab_new = self.page.get_tab(tab_id)
-                    button = tab_new.ele('x://*[@id="app"]/div/div/div/div/div[5]/div[2]/button[2]') # noqa
+                    button = tab_new.ele('x://*[@id="app"]/div/div/div/div/div[5]/div[2]/button[2]', timeout=2) # noqa
                     logger.info('{}'.format(button.text))
                     button.click()
                 except: # noqa
@@ -854,7 +962,7 @@ class ParticleTask():
                 try:
                     tab_id = self.page.latest_tab
                     tab_new = self.page.get_tab(tab_id)
-                    button = tab_new.ele('x://*[@id="app"]/div/div/div/div/div/div[6]/div/button[2]') # noqa
+                    button = tab_new.ele('x://*[@id="app"]/div/div/div/div/div/div[6]/div/button[2]', timeout=2) # noqa
                     logger.info('{}'.format(button.text))
                     button.click()
                 except: # noqa
@@ -964,6 +1072,12 @@ def main(args):
 
         args.s_profile = s_profile
 
+        if instParticleTask.is_update:
+            # 上一次执行有更新，才触发切换 proxy
+            instParticleTask.init_proxy()
+
+        # skip_profile = False
+
         # 切换 IP 后，可能出现异常(与页面的连接已断开)，增加重试
         max_try_except = 3
         for j in range(1, max_try_except+1):
@@ -987,9 +1101,14 @@ def main(args):
                     is_checked_in = True
                     run_checkin = False
                     logger.info(f'[{s_profile}] Check-in 已完成')
+                    instParticleTask.is_checked_in = True
 
                 run_nft = True
                 if lst_status:
+                    instParticleTask.nft_purchased = int(lst_status[2])
+                    instParticleTask.nft_limit = int(lst_status[3])
+                    instParticleTask.usdg = int(lst_status[4])
+
                     nft_purchased = int(lst_status[2])
                     nft_limit = int(lst_status[3])
                     if nft_purchased == DEF_NUM_NFT:
@@ -999,7 +1118,9 @@ def main(args):
                 if run_checkin or run_nft:
                     # instParticleTask.init_proxy()
                     instParticleTask.initChrome(s_profile)
-                    instParticleTask.open_okx()
+                    if not instParticleTask.open_okx():
+                        # skip_profile = True
+                        break
                     instParticleTask.particle_init()
 
                     if run_checkin:
@@ -1017,13 +1138,13 @@ def main(args):
                     d_nft_limit[s_profile] = nft_limit
                     d_usdg[s_profile] = instParticleTask.usdg
 
-                    instParticleTask.dic_status[s_profile] = [
-                        s_profile,
-                        d_checkin[s_profile],
-                        nft_purchased,
-                        nft_limit,
-                        instParticleTask.usdg
-                    ]
+                    # instParticleTask.dic_status[s_profile] = [
+                    #     s_profile,
+                    #     d_checkin[s_profile],
+                    #     nft_purchased,
+                    #     nft_limit,
+                    #     instParticleTask.usdg
+                    # ]
                     instParticleTask.status_save()
                 else:
                     pass
@@ -1036,7 +1157,7 @@ def main(args):
 
         logger.info('Finish')
 
-        if len(items) > 0:
+        if instParticleTask.is_update and len(items) > 0:
             sleep_time = random.randint(args.sleep_sec_min, args.sleep_sec_max)
             if sleep_time > 60:
                 logger.info('sleep {} minutes ...'.format(int(sleep_time/60)))
